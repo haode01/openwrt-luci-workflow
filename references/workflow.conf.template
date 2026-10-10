@@ -1,0 +1,99 @@
+#!/bin/bash
+# ============================================================================
+#  ArcWrt LuCI 工作流配置
+# ============================================================================
+#  模板：~/.dsh/skills/arcwrt-luci-workflow/references/workflow.conf.template
+#  实例：~/.dsh/arcwrt-luci.conf        ← 复制模板到这里，改成你的值
+#  覆盖：export ARCRWT_CONF=/别的路径.conf
+#
+#  语法：bash（会被 source）。值用双引号；$HOME 之类可展开。
+#
+#  设计原则：本文件是【唯一事实来源】。
+#            skill 不再探测环境、不再靠推断，只读这里。
+#            改完跑 `wf.sh check` 自检。
+# ============================================================================
+
+
+# ─────────────────────────── 本机（真源） ───────────────────────────
+# 本地 git 仓库根 —— 你日常编辑、git add、git commit 的地方
+LOCAL_REPO="/mnt/data/work/et/workspace/et/project"
+
+# 产品代码与版本号（两者拼出 LOCAL_PATCH 路径）
+PROJECT="PRV36BE349B-ET"
+VERSION="bcm-mesh-6.3.0_arcwrt_aarch64"
+
+# project_patch 在 $LOCAL_REPO/$PROJECT/$VERSION/ 下的子目录名
+PATCH_SUBDIR="project_patch"
+
+
+# ─────────────────────────── 同步工具 ───────────────────────────
+SYNC_TOOL="/mnt/data/work/tools/sync_file/sync_remote.sh"
+
+# ~/.sync_remote.conf 里的 SERVERS 别名（本例 206）
+SYNC_SERVER="206"
+
+
+# ─────────────────────────── build server ───────────────────────────
+BUILD_HOST="10.118.81.206"
+BUILD_USER="zilin_chen"
+# SSH 密码。须与 ~/.sync_remote.conf 的 SFTP_PASSWORD 一致
+# （sync_remote.sh 用后者传文件，这里用前者建会话；不一致会在 wf.sh check 时报 WARN）
+BUILD_PASS="<your-build-server-password>"
+BUILD_PORT="22"
+
+# ★★ 最易漂移的一项：编译树根路径。
+#    切树（如 arcwrt → arcwrt0911）时，必须同时改这里和 CONTAINER。
+OPENWRT_ROOT="/home/zilin_chen/hddst/workspace/et/docker_build_ng/arcwrt0911/openwrt"
+
+# build 工作根（备选同步路径 / docker_run-arcwrt 入口用）
+BUILD_BASE="/home/zilin_chen/hddst/workspace/et/docker_build_ng/arcwrt"
+
+# ★★ 编译用的常驻容器名（须能看到上面那棵树；容器整挂了 $HOME，通常都能看到）
+#    用 `docker ps` 确认名字，别照抄。
+CONTAINER="openwrt_1009_09091006"
+
+# 并行编译任务数
+MAKE_JOBS="16"
+
+# ipk 产物目录（相对 OPENWRT_ROOT）
+IPK_DIR="bin/packages/aarch64/feeds_addon"
+
+
+# ─────────────────────────── 路由器 ───────────────────────────
+ROUTER_HOST="192.168.1.1"
+ROUTER_USER="root"
+ROUTER_PASS="<your-router-password>"   # 固件默认；改过会随重启回退
+ROUTER_WEB_URL="https://192.168.1.1/index.htm"
+ROUTER_WEB_USER="superuser"
+ROUTER_WEB_PASS="<your-web-password>"
+
+# 全量固件下发入口
+FIRMWARE_DEPLOY_URL="http://10.118.81.110:9090/upgrade_default"
+
+
+# ─────────────────────────── 包路径映射 ───────────────────────────
+# 把「源码相对路径前缀」映射到「make target」，免去每次翻目录。
+# 格式："<源码相对路径>|<make target>"
+# 匹配规则：最长前缀优先。
+PACKAGE_MAP=(
+  "feeds/feeds_addon/package/arcadyan-utility/arc_luci/luci-arcadyan|package/feeds/feeds_addon/luci-arcadyan"
+  "feeds/feeds_addon/package/arcadyan-utility/arc_luci/luci-arc-common|package/feeds/feeds_addon/luci-arc-common"
+  "feeds/feeds_addon/package/arcadyan-utility/arc_luci/luci-app-wifi|package/feeds/feeds_addon/luci-app-wifi"
+  "feeds/feeds_addon/package/arcadyan-utility/arc_luci/luci-libs/lib-luci-arc|package/feeds/feeds_addon/lib-luci-arc"
+  "feeds/feeds_addon/package/arcadyan-utility/arc_luci/luci-libs/lib-luci-ip|package/feeds/feeds_addon/lib-luci-ip"
+  "feeds/feeds_addon/package/arcadyan-utility/arc_luci/luci-libs/lib-luci-jsonc|package/feeds/feeds_addon/lib-luci-jsonc"
+  "feeds/feeds_addon/package/arcadyan-utility/arc_luci/luci-libs/lib-luci-nixio|package/feeds/feeds_addon/lib-luci-nixio"
+  "package/base-files/files/etc|package/base-files"
+)
+
+# 防呆：命中这些包的 make target 时直接拒绝（名字像但不是编译目标）
+DENY_PACKAGES=(
+  "arc_luci_lighttpd"
+)
+
+
+# ─────────────────────────── 行为开关（1=开 0=关） ───────────────────────────
+REQUIRE_CLEAN_INDEX="1"       # 开工时暂存区必须为空
+VERIFY_CONTAINER_TREE="1"     # 编译前用 md5 校对容器看到的是同一棵树（强烈建议）
+AI_REVIEW="1"                 # commit 前跑 AI review 关卡
+REQUIRE_PRODUCT_VERIFY="1"    # 编译后做「阶段 4.5 产物回灌设备验证」
